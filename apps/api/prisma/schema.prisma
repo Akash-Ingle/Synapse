@@ -1,0 +1,266 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pgcrypto]
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String?  @map("password_hash")
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  ownedWorkspaces  Workspace[]        @relation("WorkspaceOwner")
+  memberships      WorkspaceMember[]
+  documentPerms    DocumentPermission[]
+  createdDocuments Document[]         @relation("DocumentCreator")
+  comments         Comment[]
+  versions         Version[]
+  tasks            Task[]             @relation("TaskOwner")
+  activities       ActivityEvent[]
+  notifications    Notification[]
+  refreshTokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Workspaces
+// ─────────────────────────────────────────────────────────────
+model Workspace {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  owner     User     @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  ownerId   String   @map("owner_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members   WorkspaceMember[]
+  documents Document[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String    @map("workspace_id") @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String    @map("user_id") @db.Uuid
+  role        String    @default("member")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@id([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Documents & collaboration
+// ─────────────────────────────────────────────────────────────
+model Document {
+  id               String   @id @default(uuid()) @db.Uuid
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  title            String   @default("Untitled")
+  docType          String   @default("doc") @map("doc_type")
+  createdBy        User     @relation("DocumentCreator", fields: [createdById], references: [id])
+  createdById      String   @map("created_by") @db.Uuid
+  // Live CRDT (Yjs) binary state for the document.
+  ydocState        Bytes?   @map("ydoc_state")
+  // Flattened plain text, kept in sync for full-text search + embeddings + diffing.
+  contentText      String   @default("") @map("content_text")
+  currentVersionNo Int      @default(0) @map("current_version_no")
+  isArchived       Boolean  @default(false) @map("is_archived")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  permissions DocumentPermission[]
+  versions    Version[]
+  comments    Comment[]
+  tags        DocumentTag[]
+  embeddings  Embedding[]
+  aiJobs      AiJob[]
+  tasks       Task[]
+  activities  ActivityEvent[]
+
+  @@index([workspaceId])
+  @@map("documents")
+}
+
+model DocumentPermission {
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String   @map("document_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String   @map("user_id") @db.Uuid
+  role       String   // owner | editor | commenter | viewer
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@id([documentId, userId])
+  @@index([userId])
+  @@map("document_permissions")
+}
+
+model Version {
+  id          String   @id @default(uuid()) @db.Uuid
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId  String   @map("document_id") @db.Uuid
+  versionNo   Int      @map("version_no")
+  label       String?
+  // Immutable CRDT snapshot for restore.
+  snapshot    Bytes?
+  contentText String   @default("") @map("content_text")
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([documentId, versionNo])
+  @@index([documentId])
+  @@map("versions")
+}
+
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String    @map("document_id") @db.Uuid
+  threadId   String    @map("thread_id") @db.Uuid
+  author     User      @relation(fields: [authorId], references: [id])
+  authorId   String    @map("author_id") @db.Uuid
+  body       String
+  quotedText String?   @map("quoted_text")
+  // CRDT relative position so the anchor survives concurrent edits.
+  anchor     Json?
+  resolved   Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([documentId])
+  @@index([threadId])
+  @@map("comments")
+}
+
+model DocumentTag {
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String   @map("document_id") @db.Uuid
+  tag        String
+  source     String   @default("ai") // user | ai
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@id([documentId, tag])
+  @@map("document_tags")
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI subsystem
+// ─────────────────────────────────────────────────────────────
+model Embedding {
+  id         String   @id @default(uuid()) @db.Uuid
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String   @map("document_id") @db.Uuid
+  versionNo  Int?     @map("version_no")
+  chunkIndex Int      @map("chunk_index")
+  content    String
+  // pgvector column — Gemini gemini-embedding-001 produces 768-dim vectors.
+  embedding  Unsupported("vector(768)")?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@map("embeddings")
+}
+
+model AiJob {
+  id          String    @id @default(uuid()) @db.Uuid
+  type        String
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  documentId  String?   @map("document_id") @db.Uuid
+  status      String    @default("pending") // pending | running | done | failed
+  payload     Json?
+  result      Json?
+  tokensIn    Int       @default(0) @map("tokens_in")
+  tokensOut   Int       @default(0) @map("tokens_out")
+  costUsd     Float     @default(0) @map("cost_usd")
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([documentId])
+  @@index([type, status])
+  @@map("ai_jobs")
+}
+
+model AiCache {
+  id        String   @id @default(uuid()) @db.Uuid
+  feature   String
+  inputHash String   @map("input_hash")
+  response  Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([feature, inputHash])
+  @@map("ai_cache")
+}
+
+model Task {
+  id         String    @id @default(uuid()) @db.Uuid
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String    @map("document_id") @db.Uuid
+  text       String
+  owner      User?     @relation("TaskOwner", fields: [ownerId], references: [id])
+  ownerId    String?   @map("owner_id") @db.Uuid
+  dueDate    DateTime? @map("due_date")
+  status     String    @default("open") // open | done
+  source     String    @default("ai") // user | ai
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@map("tasks")
+}
+
+model ActivityEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String   @map("document_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String   @map("user_id") @db.Uuid
+  type       String
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@map("activity_events")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id") @db.Uuid
+  type      String
+  payload   Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("notifications")
+}

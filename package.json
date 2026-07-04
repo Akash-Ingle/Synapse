@@ -1,0 +1,35 @@
+{
+  "name": "synapse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synapse — Real-time collaborative AI editor",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:api": "npm run dev --workspace @synapse/api",
+    "dev:collab": "npm run dev --workspace @synapse/collab",
+    "dev:worker": "npm run dev --workspace @synapse/worker",
+    "dev:web": "npm run dev --workspace @synapse/web",
+    "prisma:generate": "npm run prisma:generate --workspace @synapse/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace @synapse/api",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose down",
+    "docker:build": "docker compose --profile full build",
+    "docker:up": "docker compose --profile full up -d",
+    "docker:down": "docker compose --profile full down",
+    "docker:logs": "docker compose --profile full logs -f",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

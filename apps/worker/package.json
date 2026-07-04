@@ -1,0 +1,26 @@
+{
+  "name": "@synapse/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Synapse background AI worker (embeddings, tagging, insights)",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@synapse/shared": "*",
+    "bullmq": "^5.13.2",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

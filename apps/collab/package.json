@@ -1,0 +1,31 @@
+{
+  "name": "@synapse/collab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Synapse real-time collaboration service (WebSocket + Yjs)",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "lib0": "^0.2.97",
+    "pg": "^8.13.0",
+    "ws": "^8.18.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.19"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
