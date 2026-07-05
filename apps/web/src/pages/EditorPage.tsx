@@ -32,6 +32,12 @@ interface DiffTarget {
   to: number;
 }
 
+interface Collaborator {
+  userId: string;
+  role: string;
+  user: { name: string; email: string };
+}
+
 export default function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -48,6 +54,50 @@ export default function EditorPage() {
   const [sidebarTab, setSidebarTab] = useState<"ai" | "comments" | "versions">("ai");
   const [diffView, setDiffView] = useState<DiffTarget | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState<"editor" | "commenter" | "viewer">("editor");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+
+  const loadCollaborators = useCallback(() => {
+    if (!id) return;
+    apiFetch<Collaborator[]>(`/documents/${id}/collaborators`).then(setCollaborators).catch(() => {});
+  }, [id]);
+
+  useEffect(() => {
+    if (shareOpen) loadCollaborators();
+  }, [shareOpen, loadCollaborators]);
+
+  async function handleShare() {
+    if (!id || !shareEmail.trim()) return;
+    setShareBusy(true);
+    try {
+      await apiFetch(`/documents/${id}/share`, {
+        method: "POST",
+        body: JSON.stringify({ email: shareEmail.trim(), role: shareRole }),
+      });
+      toast(`Shared with ${shareEmail}`, "success");
+      setShareEmail("");
+      loadCollaborators();
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to share", "error");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function handleRevoke(targetUserId: string) {
+    if (!id) return;
+    try {
+      await apiFetch(`/documents/${id}/collaborators/${targetUserId}`, { method: "DELETE" });
+      toast("Access revoked", "success");
+      loadCollaborators();
+    } catch (err: any) {
+      toast(err?.message ?? "Failed to revoke", "error");
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -163,12 +213,89 @@ export default function EditorPage() {
           {themeIcon}
         </button>
         <button
+          onClick={() => setShareOpen(true)}
+          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition"
+        >
+          Share
+        </button>
+        <button
           onClick={saveVersion}
           className="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-300 transition"
         >
           Save version
         </button>
       </header>
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShareOpen(false)}>
+          <div
+            className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold dark:text-white">Share document</h2>
+              <button onClick={() => setShareOpen(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white text-xl">×</button>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              <input
+                type="email"
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+                placeholder="Enter email address"
+                className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onKeyDown={(e) => e.key === "Enter" && handleShare()}
+              />
+              <select
+                value={shareRole}
+                onChange={(e) => setShareRole(e.target.value as any)}
+                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-2 text-sm dark:text-white"
+              >
+                <option value="editor">Editor</option>
+                <option value="commenter">Commenter</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button
+                onClick={handleShare}
+                disabled={shareBusy || !shareEmail.trim()}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
+              >
+                {shareBusy ? "…" : "Invite"}
+              </button>
+            </div>
+
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+              <h3 className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 uppercase">People with access</h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {collaborators.map((c) => (
+                  <div key={c.userId} className="flex items-center justify-between text-sm">
+                    <div>
+                      <span className="font-medium dark:text-white">{c.user.name}</span>
+                      <span className="ml-2 text-slate-400 text-xs">{c.user.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">
+                        {c.role}
+                      </span>
+                      {c.role !== "owner" && (
+                        <button
+                          onClick={() => handleRevoke(c.userId)}
+                          className="text-red-400 hover:text-red-600 text-xs"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {collaborators.length === 0 && (
+                  <p className="text-xs text-slate-400">Only you have access.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {diffView ? (
