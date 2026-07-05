@@ -1,4 +1,4 @@
-# Synapse — Real-Time Collaborative AI Editor
+# Synapse - Real-Time Collaborative AI Editor
 
 A production-grade collaborative document editor with deep AI capabilities, real-time multi-user editing, and full DevOps infrastructure. Built as a monorepo with 5 services spanning the full stack.
 
