@@ -23,12 +23,12 @@ RUN npm prune --omit=dev
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/api/package.json ./apps/api/
-COPY --from=build /app/apps/api/node_modules/.prisma ./apps/api/node_modules/.prisma
 USER node
 EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
